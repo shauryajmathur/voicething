@@ -326,7 +326,7 @@ public struct SearchPopupView: View {
                 case 1:
                     Image(systemName: "paperplane").font(.system(size: 43, weight: .ultraLight)).padding(.bottom, 24)
                     Text("Straight into the chat.").font(.system(size: 34, weight: .medium)).tracking(-0.8)
-                    Text("Press Enter to record and send the sound through your chat’s microphone. Keep the chat focused until it finishes.")
+                    Text("Press Enter to paste audio in WhatsApp Web, or record and send through the microphone in other chats. Keep the chat focused until it finishes.")
                         .font(.system(size: 15)).lineSpacing(5).foregroundStyle(.white.opacity(0.45)).padding(.top, 12)
                     HStack(spacing: 14) {
                         Button(viewModel.hasAccessibility ? "Accessibility enabled" : "Enable Accessibility") { viewModel.requestAccessibility(); viewModel.openAccessibilitySettings() }

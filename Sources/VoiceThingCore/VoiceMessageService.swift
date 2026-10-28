@@ -4,9 +4,13 @@ import OSLog
 
 @MainActor
 final class VoiceMessageService {
-    private let logger = Logger(subsystem: "com.voicething.app", category: "Instagram")
+    private let logger = Logger(subsystem: "com.voicething.app", category: "VoiceMessage")
     private var targetWindow: AXUIElement?
-    private let browserIDs: Set<String> = ["app.zen-browser.zen", "org.mozilla.firefox"]
+    private let browserIDs: Set<String> = [
+        "app.zen-browser.zen", "org.mozilla.firefox", "com.apple.Safari",
+        "com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac",
+        "com.brave.Browser", "company.thebrowser.Browser", "com.operasoftware.Opera"
+    ]
 
     static func conversationURL(_ value: String) -> URL? {
         guard let url = URL(string: value), url.scheme == "https", url.host == "www.instagram.com",
@@ -15,13 +19,21 @@ final class VoiceMessageService {
         return url
     }
 
+    static func supportsFilePaste(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host == "web.whatsapp.com"
+    }
+
     func destination(in app: NSRunningApplication) -> URL? {
+        webURL(in: app).flatMap { Self.conversationURL($0.absoluteString) }
+    }
+
+    private func webURL(in app: NSRunningApplication) -> URL? {
         guard browserIDs.contains(app.bundleIdentifier ?? "") else { return nil }
         let application = AXUIElementCreateApplication(app.processIdentifier)
         var focused = elementAttribute(application, kAXFocusedUIElementAttribute)
         for _ in 0..<16 {
             guard let element = focused else { break }
-            if let url = conversation(in: element) { return url }
+            if let url = webURL(in: element) { return url }
             focused = elementAttribute(element, kAXParentAttribute)
         }
         guard let window = elementAttribute(application, kAXFocusedWindowAttribute) else { return nil }
@@ -30,22 +42,45 @@ final class VoiceMessageService {
         while index < pending.count && index < 1000 {
             let element = pending[index]
             index += 1
-            if let url = conversation(in: element) { return url }
+            if let url = webURL(in: element) { return url }
             if string(element, kAXRoleAttribute) == kAXMenuRole { continue }
             if let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] { pending.append(contentsOf: children) }
         }
         return nil
     }
 
-    private func conversation(in element: AXUIElement) -> URL? {
+    private func webURL(in element: AXUIElement) -> URL? {
         guard string(element, kAXRoleAttribute) == "AXWebArea" else { return nil }
-        if let value = attribute(element, kAXURLAttribute) as? URL { return Self.conversationURL(value.absoluteString) }
-        return Self.conversationURL(string(element, kAXURLAttribute))
+        if let value = attribute(element, kAXURLAttribute) as? URL { return value }
+        return URL(string: string(element, kAXURLAttribute))
     }
 
     func prepare(audioFile: URL, in app: NSRunningApplication, conversation: URL? = nil) async throws {
         let application = AXUIElementCreateApplication(app.processIdentifier)
         targetWindow = elementAttribute(application, kAXFocusedWindowAttribute)
+        app.activate(options: [])
+        try await Task.sleep(for: .milliseconds(250))
+        try Task.checkCancellation()
+        try ensureConversation(conversation, in: app)
+        if let url = webURL(in: app), Self.supportsFilePaste(url) {
+            try AudioAccessService().copy(audioFile: audioFile)
+            try ensureConversation(conversation, in: app)
+            guard webURL(in: app) == url else {
+                throw AppError.instagramVoice("The conversation changed. Try again.")
+            }
+            let source = CGEventSource(stateID: .combinedSessionState)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
+                throw AppError.instagramVoice("Could not paste the audio into WhatsApp Web.")
+            }
+            down.flags = .maskCommand
+            up.flags = .maskCommand
+            down.postToPid(app.processIdentifier)
+            up.postToPid(app.processIdentifier)
+            logger.info("Audio pasted into WhatsApp Web")
+            return
+        }
+
         let route = VoiceRecordingRoute()
         var recordingStarted = false
         var sent = false
@@ -57,9 +92,6 @@ final class VoiceMessageService {
             }
         }
 
-        app.activate(options: [])
-        try await Task.sleep(for: .milliseconds(250))
-        try ensureConversation(conversation, in: app)
         guard self.recordControl(in: application) != nil else {
             throw AppError.instagramVoice("Open a chat with a voice-recording button. VoiceThing could not find this app’s recorder.")
         }

@@ -1,12 +1,12 @@
 # VoiceThing for macOS
 
-VoiceThing sends sounds as voice messages through VoiceThing Microphone. Open a chat, press Option–Space, choose a sound, and press Enter. It starts the chat’s recorder, plays the selected audio through the virtual microphone, stops, and sends. The previous microphone is restored afterward.
+Open a chat, press Option–Space, choose a sound, and press Enter. In WhatsApp Web, VoiceThing copies and pastes the audio file into the chat; review the attachment and press Send. Other chats use VoiceThing Microphone: it starts the chat’s recorder, plays the selected audio through the virtual microphone, stops, and sends. The previous microphone is restored afterward.
 
-The same recording route is used for browser chats and native apps. The destination must expose accessible record, stop, and send buttons. Apps with unsupported controls or press-and-hold recorders need a dedicated adapter; VoiceThing reports an error when it cannot find a recorder. Use the system default microphone in the destination app. Browser speech processing can suppress music and sound effects.
+The microphone route is used for other browser chats and native apps. WhatsApp Web is detected from the active page URL in supported browsers, including Zen, Firefox, Safari, Chrome, Edge, Brave, Arc, and Opera. The destination must expose accessible record, stop, and send buttons. Apps with unsupported controls or press-and-hold recorders need a dedicated adapter; VoiceThing reports an error when it cannot find a recorder. Use the system default microphone in the destination app. Browser speech processing can suppress music and sound effects.
 
 ## Setup
 
-The welcome screen opens on first launch. Allow Accessibility access to operate chat controls and install the VoiceThing Microphone driver from the release’s `VoiceThingMicrophone.pkg`. Click the shortcut badge in the search bar to record a different global shortcut. Settings includes the same shortcut control. The welcome screen can be reopened from the menu.
+The welcome screen opens on first launch. Allow Accessibility access to paste audio and operate chat controls. For the microphone route, install the VoiceThing Microphone driver from the release’s `VoiceThingMicrophone.pkg`. Click the shortcut badge in the search bar to record a different global shortcut. Settings includes the same shortcut control. The welcome screen can be reopened from the menu.
 
 ## Audio and storage
 
