@@ -1,0 +1,4 @@
+#!/bin/sh
+# Core Audio reloads HAL plug-ins when its daemon restarts. Existing audio briefly pauses.
+/usr/bin/killall coreaudiod 2>/dev/null || :
+exit 0

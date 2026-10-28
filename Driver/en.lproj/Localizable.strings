@@ -1,0 +1,7 @@
+DeviceName = "VoiceThing Microphone";
+InputStreamName = "VoiceThing Microphone";
+OutputStreamName = "VoiceThing Audio Feed";
+ManufacturerName = "VoiceThing";
+MasterElementName = "Master";
+LeftElementName = "Left";
+RightElementName = "Right";

@@ -6,8 +6,15 @@ public final class AudioPreviewer: ObservableObject {
     @Published public private(set) var playingClipID: String?
 
     private var player: AVPlayer?
+    private var endObserver: NSObjectProtocol?
 
     public init() {}
+
+    deinit {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+    }
 
     public func togglePreview(for clip: MemeClip) {
         if playingClipID == clip.id {
@@ -15,9 +22,21 @@ public final class AudioPreviewer: ObservableObject {
             return
         }
 
-        player?.pause()
-        player = AVPlayer(url: clip.soundURL)
+        stop()
+        let playerItem = AVPlayerItem(url: clip.soundURL)
+        player = AVPlayer(playerItem: playerItem)
         playingClipID = clip.id
+
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stop()
+            }
+        }
+
         player?.play()
     }
 
@@ -25,5 +44,10 @@ public final class AudioPreviewer: ObservableObject {
         player?.pause()
         player = nil
         playingClipID = nil
+
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
     }
 }

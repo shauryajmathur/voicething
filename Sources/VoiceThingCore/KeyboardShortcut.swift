@@ -19,6 +19,6 @@ public struct KeyboardShortcut: Codable, Equatable {
     }
 
     public var isValid: Bool {
-        keyCode > 0 && modifiers != 0
+        keyCode <= 127 && modifiers != 0
     }
 }

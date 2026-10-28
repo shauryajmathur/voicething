@@ -1,161 +1,85 @@
 import Foundation
 
-public final class ClipCache {
+public actor ClipCache {
     private let fileManager: FileManager
     private let session: URLSession
-    private let cacheDirectory: URL
     private let normalizer: AudioNormalizer
+    private let root: URL
+    private let temporaryRoot: URL
 
     public init(
         fileManager: FileManager = .default,
         session: URLSession = .shared,
-        normalizer: AudioNormalizer = AudioNormalizer()
+        normalizer: AudioNormalizer = AudioNormalizer(),
+        root: URL? = nil,
+        temporaryRoot: URL? = nil
     ) {
         self.fileManager = fileManager
         self.session = session
         self.normalizer = normalizer
-
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        self.cacheDirectory = appSupport
-            .appendingPathComponent("VoiceThing", isDirectory: true)
-            .appendingPathComponent("Clips", isDirectory: true)
+        self.root = root ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("VoiceThing/Clips", isDirectory: true)
+        self.temporaryRoot = temporaryRoot ?? fileManager.temporaryDirectory
+            .appendingPathComponent("VoiceThing/Clips", isDirectory: true)
     }
 
-    public func cachedAudioFile(for clip: MemeClip) async throws -> URL {
-        try fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
-
+    public func cachedAudioFile(for clip: MemeClip, retain: Bool = false) async throws -> URL {
+        if clip.soundURL.isFileURL { return clip.soundURL }
+        let directory = retain ? root : temporaryRoot
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        prune(directory, limit: retain ? 160_000_000 : 64_000_000, expires: retain ? nil : 86_400)
         let baseName = "\(Filename.safeComponent(clip.id))-\(Filename.safeComponent(clip.name))"
-        let urlExtension = clip.soundURL.pathExtension.lowercased()
-        let normalizedOutput = cacheDirectory
-            .appendingPathComponent(baseName + "-normalized")
-            .appendingPathExtension("m4a")
+        let output = directory.appendingPathComponent(baseName).appendingPathExtension("m4a")
+        if fileManager.fileExists(atPath: output.path) { return output }
 
-        if fileManager.fileExists(atPath: normalizedOutput.path) {
-            return normalizedOutput
+        if let cached = clip.cachedAudioURL, fileManager.fileExists(atPath: cached.path) {
+            return try normalizer.normalizedFile(input: cached, output: output)
         }
+        var request = URLRequest(url: clip.soundURL)
+        request.timeoutInterval = 25
+        let (download, response) = try await session.download(for: request)
+        defer { try? fileManager.removeItem(at: download) }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size > 0, size <= 32 * 1024 * 1024 else { throw AppError.downloadFailed }
+        do {
+            return try normalizer.normalizedFile(input: download, output: output)
+        } catch {
+            try? fileManager.removeItem(at: output)
+            throw error
+        }
+    }
 
-        if Self.shouldPasteOriginal(extension: urlExtension) {
-            let originalOutput = cacheDirectory
-                .appendingPathComponent(baseName + "-source")
-                .appendingPathExtension(urlExtension)
-            if fileManager.fileExists(atPath: originalOutput.path) {
-                return normalizedOrOriginal(input: originalOutput, output: normalizedOutput)
+    public func removeCachedFiles(for clip: MemeClip) {
+        let prefix = "\(Filename.safeComponent(clip.id))-\(Filename.safeComponent(clip.name))"
+        for directory in [root, temporaryRoot] {
+            guard let files = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { continue }
+            for file in files where file.lastPathComponent.hasPrefix(prefix + ".") || file.lastPathComponent.hasPrefix(prefix + "-") {
+                try? fileManager.removeItem(at: file)
             }
         }
-
-        if let cachedAudioURL = clip.cachedAudioURL,
-           fileManager.fileExists(atPath: cachedAudioURL.path),
-           !isStaleConvertedCache(cachedAudioURL, for: clip) {
-            return normalizedOrOriginal(input: cachedAudioURL, output: normalizedOutput)
-        }
-
-        let preferredOutput = cacheDirectory.appendingPathComponent(baseName).appendingPathExtension("m4a")
-        if fileManager.fileExists(atPath: preferredOutput.path), !Self.shouldPasteOriginal(extension: urlExtension) {
-            return normalizedOrOriginal(input: preferredOutput, output: normalizedOutput)
-        }
-
-        let (downloadedURL, response) = try await session.download(from: clip.soundURL)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw AppError.downloadFailed
-        }
-
-        let sourceExtension = sourceExtension(for: clip.soundURL, response: http)
-        let sourceFile = cacheDirectory
-            .appendingPathComponent(baseName + "-source")
-            .appendingPathExtension(sourceExtension)
-
-        removeIfExists(sourceFile)
-        try fileManager.moveItem(at: downloadedURL, to: sourceFile)
-
-        if Self.shouldPasteOriginal(extension: sourceExtension) {
-            return normalizedOrOriginal(input: sourceFile, output: normalizedOutput)
-        }
-
-        if sourceExtension.lowercased() == "m4a" {
-            removeIfExists(preferredOutput)
-            try fileManager.copyItem(at: sourceFile, to: preferredOutput)
-            return normalizedOrOriginal(input: preferredOutput, output: normalizedOutput)
-        }
-
-        do {
-            try convertToM4A(input: sourceFile, output: preferredOutput)
-            return normalizedOrOriginal(input: preferredOutput, output: normalizedOutput)
-        } catch {
-            return normalizedOrOriginal(input: sourceFile, output: normalizedOutput)
-        }
     }
 
-    public static func shouldPasteOriginal(extension pathExtension: String) -> Bool {
-        switch pathExtension.lowercased() {
-        case "mp3", "m4a", "aac", "opus", "ogg", "oga", "wav":
-            return true
-        default:
-            return false
-        }
+    public func clearRetainedAudio() throws {
+        if fileManager.fileExists(atPath: root.path) { try fileManager.removeItem(at: root) }
     }
 
-    private func sourceExtension(for url: URL, response: HTTPURLResponse) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        if !pathExtension.isEmpty {
-            return pathExtension
-        }
-
-        switch response.value(forHTTPHeaderField: "Content-Type")?.lowercased().split(separator: ";").first {
-        case "audio/mp4", "audio/x-m4a":
-            return "m4a"
-        case "audio/mpeg", "audio/mp3":
-            return "mp3"
-        case "audio/aac":
-            return "aac"
-        case "audio/wav", "audio/x-wav", "audio/wave":
-            return "wav"
-        case "audio/ogg":
-            return "ogg"
-        case "audio/webm":
-            return "webm"
-        default:
-            return "mp3"
-        }
+    public func pruneExpiredAudio() {
+        prune(temporaryRoot, limit: 64_000_000, expires: 86_400)
     }
 
-    private func convertToM4A(input: URL, output: URL) throws {
-        removeIfExists(output)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
-        process.arguments = [
-            "-f", "m4af",
-            "-d", "aac",
-            input.path,
-            output.path
-        ]
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0, fileManager.fileExists(atPath: output.path) else {
-            throw AppError.conversionFailed
+    private func prune(_ directory: URL, limit: Int, expires: TimeInterval?) {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)) else { return }
+        let entries = files.compactMap { url -> (URL, Int, Date)? in
+            guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+            return (url, values.fileSize ?? 0, values.contentModificationDate ?? .distantPast)
+        }.sorted { $0.2 < $1.2 }
+        var total = entries.reduce(0) { $0 + $1.1 }
+        for (url, size, modified) in entries {
+            if total > limit || expires.map({ Date().timeIntervalSince(modified) > $0 }) == true {
+                if (try? fileManager.removeItem(at: url)) != nil { total -= size }
+            }
         }
-    }
-
-    private func removeIfExists(_ url: URL) {
-        if fileManager.fileExists(atPath: url.path) {
-            try? fileManager.removeItem(at: url)
-        }
-    }
-
-    private func normalizedOrOriginal(input: URL, output: URL) -> URL {
-        do {
-            return try normalizer.normalizedFile(input: input, output: output)
-        } catch {
-            return input
-        }
-    }
-
-    private func isStaleConvertedCache(_ cachedAudioURL: URL, for clip: MemeClip) -> Bool {
-        let sourceExtension = clip.soundURL.pathExtension.lowercased()
-        guard Self.shouldPasteOriginal(extension: sourceExtension) else { return false }
-        return cachedAudioURL.pathExtension.lowercased() != sourceExtension
     }
 }

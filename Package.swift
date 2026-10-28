@@ -14,6 +14,7 @@ let package = Package(
         .target(
             name: "VoiceThingCore",
             path: "Sources/VoiceThingCore",
+            resources: [.copy("Resources/Brand")],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),

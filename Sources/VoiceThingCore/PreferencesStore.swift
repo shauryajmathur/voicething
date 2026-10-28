@@ -15,6 +15,21 @@ public final class PreferencesStore {
         self.defaults = defaults
     }
 
+    public var retainsAudio: Bool {
+        get { defaults.bool(forKey: "retainsAudio") }
+        set { defaults.set(newValue, forKey: "retainsAudio") }
+    }
+
+    public var hasCompletedOnboarding: Bool {
+        get { defaults.bool(forKey: "hasCompletedOnboarding") }
+        set { defaults.set(newValue, forKey: "hasCompletedOnboarding") }
+    }
+
+    public func clearHistory() {
+        defaults.removeObject(forKey: Key.favorites)
+        defaults.removeObject(forKey: Key.recents)
+    }
+
     public var favorites: [MemeClip] {
         get { readClips(forKey: Key.favorites) }
         set { writeClips(newValue.prefix(100).map { $0 }, forKey: Key.favorites) }
@@ -68,6 +83,11 @@ public final class PreferencesStore {
         var current = recents.filter { $0.id != clip.id }
         current.insert(stored, at: 0)
         recents = current
+    }
+
+    public func removeClip(_ clip: MemeClip) {
+        favorites = favorites.filter { $0.id != clip.id }
+        recents = recents.filter { $0.id != clip.id }
     }
 
     private func readClips(forKey key: String) -> [MemeClip] {

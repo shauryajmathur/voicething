@@ -2,6 +2,7 @@
 .swiftpm/
 .DS_Store
 VoiceThing.app/
+dist/
 DerivedData/
 *.xcuserdata/
 *.m4a

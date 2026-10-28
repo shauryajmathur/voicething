@@ -14,7 +14,8 @@ public final class GlobalHotKey {
         unregister()
     }
 
-    public func register(_ shortcut: KeyboardShortcut) {
+    @discardableResult
+    public func register(_ shortcut: KeyboardShortcut) -> Bool {
         unregister()
 
         var eventType = EventTypeSpec(
@@ -22,7 +23,7 @@ public final class GlobalHotKey {
             eventKind: UInt32(kEventHotKeyPressed)
         )
 
-        InstallEventHandler(
+        let handlerStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, _, userData in
                 guard let userData else { return noErr }
@@ -39,7 +40,8 @@ public final class GlobalHotKey {
         )
 
         let hotKeyID = EventHotKeyID(signature: fourCharacterCode("VTHG"), id: 1)
-        RegisterEventHotKey(
+        guard handlerStatus == noErr else { return false }
+        let status = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
             hotKeyID,
@@ -47,6 +49,7 @@ public final class GlobalHotKey {
             0,
             &hotKeyRef
         )
+        return status == noErr
     }
 
     public func registerOptionSpace() {

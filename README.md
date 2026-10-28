@@ -1,35 +1,25 @@
-# VoiceThing
+# VoiceThing for macOS
 
-Native macOS menu-bar utility for searching MyInstants meme audio clips and pasting them into the chat app that was focused before the popup opened.
+VoiceThing sends sounds as voice messages through VoiceThing Microphone. Open a chat, press Option–Space, choose a sound, and press Enter. It starts the chat’s recorder, plays the selected audio through the virtual microphone, stops, and sends. The previous microphone is restored afterward.
 
-## Requirements
+The same recording route is used for browser chats and native apps. The destination must expose accessible record, stop, and send buttons. Apps with unsupported controls or press-and-hold recorders need a dedicated adapter; VoiceThing reports an error when it cannot find a recorder. Use the system default microphone in the destination app. Browser speech processing can suppress music and sound effects.
 
-- macOS 14+
-- No API key required
+## Setup
 
-## Run
+The welcome screen opens on first launch. Allow Accessibility access to operate chat controls and install the VoiceThing Microphone driver from the release’s `VoiceThingMicrophone.pkg`. Click the shortcut badge in the search bar to record a different global shortcut. Settings includes the same shortcut control. The welcome screen can be reopened from the menu.
 
-Open `VoiceThing.app`.
+## Audio and storage
 
-The app runs as a menu-bar item and hides from the Dock. Press `Option+Space` or click the waveform menu-bar icon to open the popup.
+Downloaded sounds are normalized to M4A in small chunks off the main thread. Explicitly saved clips and microphone recordings are available in Audio Recordings. A microphone permission prompt appears only if you choose to make a recording.
 
-You can change the global shortcut in VoiceThing settings.
+Keep sounds on this Mac is off by default. The temporary cache is capped at 64 MB and files older than 24 hours are removed on launch or when preparing a clip. If enabled, the retained sound cache is capped at 160 MB and favorites and history persist. Turning retention off clears saved sound history and the retained cache. Recordings you explicitly save remain until deleted.
 
-## First Use
+## Build and test
 
-1. macOS will ask for Accessibility permission the first time the app tries to paste into another app.
-2. Open WhatsApp Desktop or another messenger, focus a message box, press `Option+Space`, search, and select an audio clip.
+```sh
+swift test
+bash scripts/package_app.sh
+open VoiceThing.app
+```
 
-VoiceThing copies the audio file to the pasteboard and sends `Cmd+V` to the previously focused app. It does not press Enter or send the message.
-
-Downloaded clips are normalized before sending so very loud and very quiet meme sounds land closer to the same volume. The original source file is kept in cache, and the sent file is stored as a normalized M4A.
-
-## Accessibility Troubleshooting
-
-If macOS says Accessibility is still needed after you already enabled it, remove VoiceThing from System Settings, reopen the app, and add it again.
-
-## Clear Local Cache
-
-VoiceThing stores downloaded clips and normalized send-ready files under `~/Library/Application Support/VoiceThing/Clips` and saves recents/favorites in `com.voicething.app` preferences.
-
-Delete that folder if you want to fully reset downloaded clips.
+Packaging builds a universal macOS 14+ application and writes `dist/VoiceThing.zip`. Packaging uses the available persistent Apple signing identity. Set `CODE_SIGN_IDENTITY` explicitly if more than one is installed. Public distribution needs Developer ID signing and notarization.
